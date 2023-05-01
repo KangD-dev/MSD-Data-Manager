@@ -26,6 +26,7 @@ library(DT)
 library(plotly)
 
 
+
 # Support Function
 # 1) Date
 today <- function() format(Sys.Date(), "%Y%m%d")
@@ -40,10 +41,11 @@ make_dir <- function(x) {
 
 
 # Directory
-project_dir <- "/Users/KangDong/Desktop/MSD_Data_Manager/MSD-Data-Manager" # Change to local project directory
+project_dir <- "/Users/KangDong/Desktop/MSD-Data-Manager" # Change to local project directory
 input_dir <- file.path(project_dir, "input") %>% make_dir
 output_dir <- file.path(project_dir, "output") %>% make_dir
 log_dir <- file.path(project_dir, "log") %>% make_dir
+
 
 
 ```
