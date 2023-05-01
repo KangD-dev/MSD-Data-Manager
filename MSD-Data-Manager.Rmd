@@ -1,0 +1,50 @@
+---
+title: "MSD-Data-Manager"
+author: "Kang Dong"
+date: '2023-05-01'
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+# Objective
+
+# Shiny App
+```{r}
+# Library
+library(tidyverse)
+library(magrittr)
+library(readxl)
+library(shiny)
+library(DT)
+library(plotly)
+
+
+# Support Function
+# 1) Date
+today <- function() format(Sys.Date(), "%Y%m%d")
+now <- function() format(Sys.time(), "%H%M")
+
+# 2) Make directory
+make_dir <- function(x) {
+    if(!dir.exists(x)) dir.create(x, recursive = TRUE)
+    return(x)
+}
+
+
+
+# Directory
+project_dir <- "/Users/KangDong/Desktop/MSD_Data_Manager/MSD-Data-Manager" # Change to local project directory
+input_dir <- file.path(project_dir, "input") %>% make_dir
+output_dir <- file.path(project_dir, "output") %>% make_dir
+log_dir <- file.path(project_dir, "log") %>% make_dir
+
+
+```
+
