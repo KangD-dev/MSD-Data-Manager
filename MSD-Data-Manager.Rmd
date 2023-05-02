@@ -48,5 +48,63 @@ log_dir <- file.path(project_dir, "log") %>% make_dir
 
 
 
+# Files
+splman_file <- list.files(input_dir, pattern = "Sample_Manifest")
+splman <- read_excel(path = file.path(input_dir, splman_file), sheet = "sample manifest")
+
+
+
+# Running App
+library(shiny)
+
+ui <- fluidPage(
+  # title
+  titlePanel("MSD Data Manager"),
+  
+  # sidebar layout
+  sidebarLayout(
+    sidebarPanel(
+      # Data file
+      fileInput("data", "Choose your data File:", accept = ".csv", multiple = TRUE),
+      # Standard file
+      fileInput("standard", "Choose your standard File:", accept = ".csv", multiple = TRUE),
+      # Sample manifest file
+      fileInput("splman", "Choose your sample manifest file:", accept = ".xlsx", multiple = FALSE),
+      # Load data
+      actionButton('load_csv', 'Load csv')
+    ),
+    
+    mainPanel(
+      tabsetPanel(
+        tabPanel("CV", plotlyOutput("cv")),
+        tabPanel("Standard", plotlyOutput("standard")),
+        tabPanel("Data", dataTableOutput("data_table"))
+      )
+
+    )
+    
+  )
+)
+  
+
+
+server <- function(input, output, session) {
+  # Data
+  data <- eventReactive(input$data, {
+    map(input$data, ~ read.csv(file.path(input_dir, input$data)))
+  })
+  
+  output$data_table = renderDataTable({
+    data
+  })
+
+  
+
+}
+
+shinyApp(ui, server)
+
+
+
 ```
 
