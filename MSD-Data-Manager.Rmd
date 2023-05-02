@@ -65,13 +65,11 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       # Data file
-      fileInput("data", "Choose your data File:", accept = ".csv", multiple = TRUE),
+      fileInput("data", "Choose your data file", accept = ".csv", multiple = TRUE),
       # Standard file
-      fileInput("standard", "Choose your standard File:", accept = ".csv", multiple = TRUE),
+      fileInput("standard", "Choose your standard file", accept = ".csv", multiple = TRUE),
       # Sample manifest file
-      fileInput("splman", "Choose your sample manifest file:", accept = ".xlsx", multiple = FALSE),
-      # Load data
-      actionButton('load_csv', 'Load csv')
+      fileInput("splman", "Choose your sample manifest file", accept = ".xlsx", multiple = FALSE)
     ),
     
     mainPanel(
@@ -89,14 +87,22 @@ ui <- fluidPage(
 
 
 server <- function(input, output, session) {
-  # Data
-  data <- eventReactive(input$data, {
-    map(input$data, ~ read.csv(file.path(input_dir, input$data)))
-  })
+  # Data file
+    output$data_table <- renderDataTable({
+      
+        data_files <- input$data$datapath %>%
+          set_names(input$data$name)
+        
+        
+        if (length(data_files) == 0) {
+          return(NULL)
+          }
+        
+        map(data_files, ~ read.csv(.x, skip = 1)) %>%
+          bind_rows(.id = "Filename")
+
+    })
   
-  output$data_table = renderDataTable({
-    data
-  })
 
   
 
