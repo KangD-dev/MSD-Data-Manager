@@ -1,0 +1,570 @@
+---
+title: "MSD 54-Plex Analysis and APLCO Calprotectin Analysis"
+author: "Kang Dong | Centre for Heart Lung Innovation, University of British Columbia"
+date: "October 3, 2021"
+output:
+  pdf_document:
+    toc: yes
+    number_sections: yes
+---
+
+```{r, echo=FALSE}
+# Input Data
+library(readxl)
+
+# Data manipulation
+library(tidyverse)
+
+# Data visualization
+library(ggplot2)
+library(ggpubr)
+library(ggsci)
+library(ggfortify)
+library(ggrepel)
+
+# Statistical analysis
+library(edgeR)
+library(limma)
+library(psych)
+
+# Machine learning
+library(caret)
+library(tidymodels)
+library(pROC)
+
+# Report generation
+#library(knitr)
+
+# Results path
+resultsPath <- "Final_results/MSD"
+```
+
+# R function
+
+## Pre-process MSD data: "preprocessMSD(filePath, dataSheet, standardSheet, sampleInfo)"
+```{r}
+preprocessMSD <- function(filePath, dataSheet, standardSheet, sampleInfo) {
+  # Step 1. Create Empty List
+  output <- list()
+  
+  # Step 2. Extract Study Data
+data <- read_excel(path = filePath, sheet = dataSheet) %>%
+  as.data.frame() %>%
+  mutate(UniqueID = paste(Plate, Sample, sep = "-")) %>%
+  filter(UniqueID %in% sampleInfo$UniqueID)
+
+# Step 3. Extract Standard
+standard <- read_excel(path = filePath, sheet = standardSheet) %>%
+  dplyr::select(Plate, Assay, Spot, `Detection Limits: Calc. Low`, `Detection Limits: Calc. High`)
+
+# Step 4. Add Standard and sampleInfo to Data
+data <- left_join(data, standard, by = c("Plate", "Assay", "Spot"))
+data <- left_join(data, sampleInfo, by = c("Plate", "Sample", "UniqueID"))
+
+data <- data %>% dplyr::select(SampleID, SubjectID, Plate, Sample, UniqueID, Assay, `Calc. Concentration`, `Calc. Conc. Mean`, `Calc. Conc. CV`, `Detection Limits: Calc. Low`, `Detection Limits: Calc. High` )
+
+# Step 5. Save `data` to `output` list
+output$data <- data
+
+# Step 6. Summarize sample below low detection limits an CV
+summaryTable <- data %>% 
+  mutate(above_low = ifelse(`Calc. Conc. Mean` > `Detection Limits: Calc. Low`, TRUE, FALSE)) %>%
+  #dplyr::select(Plate, Sample, Assay, `Calc. Conc. Mean`, `Calc. Conc. CV`, UniqueID, `Detection Limits: Calc. Low`, SubjectID, above_low) %>%
+  dplyr::select(-`Calc. Concentration`) %>%
+  distinct() %>%
+  group_by(Assay) %>%
+  summarise(undetected = sum(above_low == FALSE | is.na(above_low)),
+            `CV ≤ 5%` = sum(`Calc. Conc. CV` <= 5, na.rm = TRUE),
+            `5% < CV ≤ 10%` = sum(`Calc. Conc. CV` > 5 & `Calc. Conc. CV` <= 10, na.rm = TRUE),
+             `10% < CV ≤ 15%` = sum(`Calc. Conc. CV` > 10 & `Calc. Conc. CV` <= 15, na.rm = TRUE),
+             `15% < CV ≤ 20%` = sum(`Calc. Conc. CV` > 15 & `Calc. Conc. CV` <= 20, na.rm = TRUE),
+             `25% < CV ≤ 30%` = sum(`Calc. Conc. CV` > 25 & `Calc. Conc. CV` <= 30, na.rm = TRUE),
+             `30% < CV ≤ 35%` = sum(`Calc. Conc. CV` > 30 & `Calc. Conc. CV` <= 35, na.rm = TRUE),
+            `CV > 35%` = sum(`Calc. Conc. CV` > 35, na.rm = TRUE),
+            CV_NA = sum(is.na(`Calc. Conc. CV`))) %>%
+  mutate(undetected_pct = round(undetected/nrow(sampleInfo), digits = 2))
+
+# Step 7. Save `summaryTable` to `output` list
+output$summaryTab <- summaryTable
+
+return(output)
+}
+```
+
+## Plot CV vs. Protein levels (pg/mL)
+```{r}
+plotCV <- function(data) {
+ p <- ggplot(data, aes(x = `Calc. Conc. CV`, y = `Calc. Concentration`)) +
+    geom_point() +
+    facet_wrap(Assay ~ Plate, ncol = 5, scale = "free_y") +
+    geom_hline(aes(yintercept = `Detection Limits: Calc. Low`), color = "dodgerblue3", linetype = 2, size = 0.75) +
+    geom_vline(xintercept = c(15, 35), color = "firebrick1", linetype = 2, size = 0.75) +
+    scale_x_continuous(breaks = c(seq(0, 100, by = 10))) +
+    labs(title = "CV vs. Calculate Concentration", x = "Coefficient of variation (CV)", y = "Calculate Concentration, pg/mL" ) +
+    theme_bw()
+  return(p)
+    }
+```
+
+# Pre-process Data : MSD
+
+## Sample grouping variables
+```{r}
+sampleInfo <- read_excel(path = "MSD/MSD 54plex Data.xlsx", sheet = "Sample ID") %>% 
+  as.data.frame() %>%
+  mutate(SampleID = substring(SampleID, 0, nchar(SampleID) - 4)) %>%
+  mutate(SubjectID = substring(SampleID, 0, 6),
+         UniqueID = paste(Plate, Sample, sep = "-"))
+
+# Keep CFTR Study
+sampleInfo <- filter(sampleInfo, Study == "CFBiomarker")
+```
+
+## Proinflammatory Panel
+
+```{r}
+proinflammatoryData <- preprocessMSD(filePath = "MSD/MSD 54plex Data.xlsx", dataSheet = "Proinflammatory Panel", standardSheet = "Proinflammatory Panel-Standard", sampleInfo)
+proinflammatoryData$summaryTab
+```
+
+```{r}
+p <- plotCV(proinflammatoryData$data)
+#ggsave(filename = paste(resultsPath, "CV-Proinflammatory.png", sep = "/"), p, width = 16, height = 8)
+```
+
+## Cytokine Panel 1
+
+```{r}
+cytokine1Data <- preprocessMSD(filePath = "MSD/MSD 54plex Data.xlsx", dataSheet = "Cytokine Panel 1", standardSheet = "Cytokine Panel 1-Standard", sampleInfo)
+cytokine1Data$summaryTab
+```
+
+```{r}
+p <- plotCV(cytokine1Data$data)
+#ggsave(filename = paste(resultsPath, "CV-Cytokine 1.png", sep = "/"), p, width = 16, height = 8)
+```
+
+## Cytokine Panel 2
+
+```{r}
+cytokine2Data <- preprocessMSD(filePath = "MSD/MSD 54plex Data.xlsx", dataSheet = "Cytokine Panel 2", standardSheet = "Cytokine Panel 2-Standard", sampleInfo)
+cytokine2Data$summaryTab
+```
+
+```{r}
+p <- plotCV(cytokine2Data$data)
+#ggsave(filename = paste(resultsPath, "CV-Cytokine 2.png", sep = "/"), p, width = 16, height = 8)
+```
+
+## Chemokine Panel 1
+
+```{r}
+chemokine1Data <- preprocessMSD(filePath = "MSD/MSD 54plex Data.xlsx", dataSheet = "Chemokine Panel 1", standardSheet = "Chemokine Panel 1-Standard", sampleInfo)
+chemokine1Data$summaryTab
+```
+
+```{r}
+p <- plotCV(chemokine1Data$data)
+#ggsave(filename = paste(resultsPath, "CV-Chemokine 1.png", sep = "/"), p, width = 16, height = 8)
+```
+
+## TH17 Panel
+
+```{r}
+th17Data <- preprocessMSD(filePath = "MSD/MSD 54plex Data.xlsx", dataSheet = "Th17 Panel", standardSheet = "Th17 Panel-Standard", sampleInfo)
+th17Data$summaryTab
+```
+
+```{r}
+p <- plotCV(th17Data$data)
+#ggsave(filename = paste(resultsPath, "CV-Th17.png", sep = "/"), p, width = 16, height = 8)
+```
+
+## Vascular Injury Panel
+```{r}
+vascularData <- preprocessMSD(filePath = "MSD/MSD 54plex Data.xlsx", dataSheet = "Vascular Injury Panel", standardSheet = "Vascular Injury Panel-Standard", sampleInfo)
+```
+
+## Angiogenesis Panel 1
+
+```{r}
+angiogenesisData <- preprocessMSD(filePath = "MSD/MSD 54plex Data.xlsx", dataSheet = "Angiogenesis Panel 1", standardSheet = "Angiogenesis Panel 1-Standard", sampleInfo)
+```
+
+## Summary table and data
+```{r}
+# Summary Table
+summaryTab_MSD <- rbind(proinflammatoryData$summaryTab, cytokine1Data$summaryTab, cytokine2Data$summaryTab, chemokine1Data$summaryTab, th17Data$summaryTab, vascularData$summaryTab, angiogenesisData$summaryTab)
+
+# Data Table
+dataTab_MSD <- rbind(proinflammatoryData$data, cytokine1Data$data, cytokine2Data$data, chemokine1Data$data, th17Data$data, vascularData$data, angiogenesisData$data) %>%
+  dplyr::select(-`Calc. Concentration`) %>%
+  distinct()
+```
+
+## Inclusion criteria for analytes
+```{r}
+# QC on PEx samples
+drop_assay <- filter(summaryTab_MSD, undetected_pct >= 0.25 | Assay == "hsIL-8")$Assay
+dataTab <- dataTab_MSD[which(dataTab_MSD$Assay %in% drop_assay),]
+
+load(file = "biomarkerData/biomarkerData.RData")
+PEx <- filter(pDataPEx, type == "PEx")
+
+plotdata <- dataTab[which(dataTab$SampleID %in% PEx$sampleID),] %>%
+  mutate(below_detect = ifelse(`Calc. Conc. Mean` < `Detection Limits: Calc. Low` | is.na(`Calc. Conc. Mean`), TRUE, FALSE))
+
+table(plotdata$Assay, plotdata$below_detect)
+```
+
+IL-17A Gen.B, IL-17A/F, IL-17B, IL-3 are detectable in stable vs. PEx samples.
+
+```{r}
+# Kept and droped Assays
+keep_assay <- filter(summaryTab_MSD, !undetected_pct >= 0.25 & !Assay == "hsIL-8")$Assay
+keep_assay <- c(keep_assay, "IL-17A Gen.B", "IL-17A/F", "IL-17B", "IL-3")
+keep_assay
+```
+
+In total, 51 analytes are detectable in plasma.
+
+```{r}
+# Update the dataTab with `keep_assay`
+dataTab_MSD <- dataTab_MSD[which(dataTab_MSD$Assay %in% keep_assay),]
+```
+
+## Data manipulation based on QC
+```{r}
+# For value is NA or below lower detection limits, replace them with half of the lower detection limits
+dataTab_MSD <- dataTab_MSD %>% mutate(below_detect = ifelse(`Calc. Conc. Mean` < `Detection Limits: Calc. Low` | is.na(`Calc. Conc. Mean`), TRUE, FALSE))
+
+dataTab_MSD[which(dataTab_MSD$below_detect == TRUE),]$`Calc. Conc. Mean` <- 0.5 * dataTab_MSD[which(dataTab_MSD$below_detect == TRUE),]$`Detection Limits: Calc. Low`
+
+dataTab_MSD <- dplyr::select(dataTab_MSD, -below_detect)
+```
+
+
+# Pre-process Data: Calprotectin (Convert ng/mL to pg/mL)
+```{r}
+CALP <- read_excel(path = "MSD/APLCO-Calprotectin Data.xlsx", sheet = "Calprotectin Data")
+
+CALP <- CALP %>% mutate(SampleID = substr(SampleID, 0, nchar(SampleID) - 4))
+CALP <- CALP[which(CALP$SampleID %in% sampleInfo$SampleID),]
+CALP <- CALP %>% mutate(`Value_pg/ml` = 1000 * AdjResult)
+```
+
+```{r}
+preprocessData_MSD <- list(summaryTable = summaryTab_MSD, MSD = dataTab_MSD, Calprotectin = CALP)
+#save(preprocessData_MSD, file = paste(resultsPath, "preprocesseData_MSD.RData", sep = "/"))
+```
+
+
+# Exploratory data analysis
+
+```{r}
+load(paste(resultsPath, "preprocesseData_MSD.RData", sep = "/"))
+load(file = "biomarkerData/biomarkerData.RData")
+```
+
+```{r}
+msd <- preprocessData_MSD$MSD %>%
+  dplyr::select(SampleID, Assay, `Calc. Conc. Mean`) %>%
+  dplyr::rename(value = `Calc. Conc. Mean`)
+
+calp <- preprocessData_MSD$Calprotectin %>%
+  mutate(Assay = rep("Calprotectin", times = nrow(preprocessData_MSD$Calprotectin))) %>%
+  dplyr::select(SampleID, Assay, `Value_pg/ml`) %>%
+  dplyr::rename(value = `Value_pg/ml`)
+
+dataTab <- rbind(msd, calp)
+```
+
+```{r}
+p <- dataTab %>%
+  ggplot(aes(x = reorder(Assay, value, FUN = median), y = value)) +
+  geom_boxplot() +
+  theme_bw() +
+  scale_y_continuous(trans = "log10") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, face = "bold"),
+        axis.text.y = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold")) +
+  labs(x = "", y = "Concentration, pg/mL")
+
+#ggsave(filename = paste(resultsPath, "Concentration-boxplot.png", sep = "/"), p, width = 16, height = 6)
+```
+
+
+```{r}
+# Distribution of Raw Data
+p <- ggplot(dataTab, aes(value)) +
+  geom_histogram() +
+  facet_wrap(~Assay, scales = "free", ncol = 8 ) +
+  labs(x = "Concentration", y = "Count") +
+  theme_bw()
+
+# Distribution of Log2 transformed Data
+p <- ggplot(dataTab, aes(log2(value))) +
+  geom_histogram() +
+  facet_wrap(~Assay, scales = "free", ncol = 8 ) +
+  labs(x = "Concentration", y = "Count") +
+  theme_bw()
+#ggsave(filename = paste(resultsPath, "Histogram Data.png", sep = "/"), p, width = 16, height = 10)
+```
+
+# PCA
+
+```{r}
+library(mixOmics)
+library(corrplot)
+library(RColorBrewer)
+
+# Prepare data
+clinical <- pDataPEx %>% column_to_rownames(var = "sampleID")
+count <- dataTab %>% pivot_wider(names_from = Assay, values_from = value) %>% 
+  column_to_rownames(var = "SampleID") %>% log2()
+
+count <- count[rownames(clinical), ]
+all(rownames(clinical) == rownames(count))
+
+# PCA
+results.pca <- mixOmics::pca(count, ncomp = 5, center = TRUE, scale = FALSE)
+
+p <- plotIndiv(results.pca, comp = c(1,2),
+          ind.names = FALSE,
+          #group = clinical$type, 
+          group = clinical$sex, 
+          title = "Stable vs. PEx",
+          legend = TRUE, legend.title = ""
+          )
+
+#ggsave(filename = paste(resultsPath, "PCA-Stable vs PEx-Sex-PC2-3.png", sep = "/"), p$graph, width = 6, height = 4)
+
+# PCs vs. Clinical Variables
+PC <- results.pca$variates$X %>% as.data.frame()
+all(rownames(PC) == rownames(clinical)) 
+
+plotdata <- cbind(PC, clinical) %>%
+  dplyr::select(contains("PC"), Age, sex, BMI, ppFEV1, CRISS, contains("differential")) %>%
+  mutate(Sex = case_when(sex == "M" ~ 1, sex == "F" ~ 0)) %>%
+  # Rename "cell differential" to "cell %"
+  dplyr::rename(`Neutrophil (%)` = Neutrophil_differential, `Lymphocyte (%)` =  Lymphocyte_differential, `Monocyte (%)` = Monocyte_differential, `Eosinophil (%)` = Eosinophil_differential, `Basophil (%)` = Basophil_differential) %>%
+  dplyr::select(-sex) %>%
+  # Re-order the variable
+  dplyr::select(contains("PC"), contains("(%)"), Age, Sex, BMI, ppFEV1, CRISS)
+
+
+keepCol <- names(dplyr::select(plotdata, contains("PC")))
+keepRow <- names(dplyr::select(plotdata, -contains("PC")))
+
+corr <- round(cor(plotdata, use = "complete.obs", method = "spearman"), 2)
+corr <- corr[keepRow, keepCol]
+
+testRes = cor.mtest(plotdata, use = "complete.obs", method = "spearman", conf.level = 0.95)
+p.mat <- testRes$p[keepRow, keepCol]
+
+pdf(file = paste(resultsPath, "PCA-Stable vs PEx-PCs.pdf", sep = "/"))
+corrplot(corr, p.mat = p.mat, sig.level = 0.05, insig = "label_sig", pch.cex = 1.5, method = "circle", tl.cex = 0.75, cl.pos = 'b', cl.cex = 0.5, col = rev(brewer.pal(n = 8, name = "RdBu")))
+dev.off()
+
+
+results.pca$loadings
+```
+
+
+# Differential expression analysis
+
+## Stable vs. PEx
+```{r}
+count <- dataTab %>% pivot_wider(names_from = Assay, values_from = value) %>% 
+  column_to_rownames(var = "SampleID") %>% log2()
+exp <- count[pDataPEx$sampleID,] %>% t()
+all(colnames(exp) == pDataPEx$sampleID)
+
+design <- model.matrix(~0 + type, data = pDataPEx)
+cor <- duplicateCorrelation(exp, design, block = pDataPEx$subject)
+
+fit <- lmFit(exp, design, block = pDataPEx$subject, correlation = cor$consensus)
+contrast <- makeContrasts(comp = typePEx - typestable, levels = design)
+fit <- contrasts.fit(fit, contrast)
+fit <- eBayes(fit)
+
+results.DE.MSD <- topTable(fit, n = Inf, coef = "comp", sort.by = "p", adjust.method="BH") %>%
+  rownames_to_column(var = "Assay")
+
+#write.csv(results.DE.MSD, file = paste(resultsPath, "DE_MSD.csv", sep = "/"), row.names = FALSE)
+```
+
+```{r}
+# Volcano Plot
+p <- results.DE.MSD %>%
+  mutate(sig = case_when(`adj.P.Val` < 0.1 ~ "FDR < 0.1",
+                         `adj.P.Val` >= 0.1 ~ "FDR ≥ 0.1")) %>%
+  ggplot(aes(x = logFC, y = -log10(P.Value))) +
+  geom_point(aes(color = sig), size = 1.5) +
+  scale_color_manual(values = c("firebrick4", "dodgerblue4")) +
+   # Fold change
+  annotate(geom = "vline", xintercept = c(-log2(1.5), log2(1.5)), x = c(-log2(1.5), log2(1.5)), linetype = c("dashed", "dashed")) +
+  annotate(geom = "text", label = c("FC < -1.5", "FC > 1.5"), x = c(-log2(1.5), log2(1.5)), y = c(0, 0), angle = 0, hjust = c(1.25, -0.25)) +
+  # p-value = 0.05 and FDR = 0.1 (p value = 0.007985579)
+  annotate(geom = "hline", yintercept = -log10(0.05), y = -log10(0.05) , linetype = "dashed") +
+  annotate(geom = "text", label = "p-value < 0.05", y = -log10(0.05), x = -1.25, angle = 0, vjust = -1) +
+  # Add gene name
+  geom_text_repel(data = filter(results.DE.MSD, P.Value < 0.05 | abs(logFC) > log2(1.5)), aes(label = Assay) ,size = 2.5, max.overlaps = Inf) +
+  # Chance label on x and y axis
+  labs(x = ~Log[2]~ 'fold change', y = ~-Log[10]~italic(P-value), color = "") +
+  # Set theme
+  xlim(-1.5,1.5) +
+  theme_pubr()
+p
+ggsave(filename = paste(resultsPath, "Volcanoplot_MSD.png", sep = "/"), p, dpi = 320, height = 4, width = 6)
+```
+
+
+## Visulize single markers
+```{r}
+clinical <- pDataPEx %>% dplyr::rename(SampleID = sampleID)
+# Calprotectin, SAA, and CRP
+p1 <- dataTab %>% 
+  inner_join(., clinical, by = "SampleID") %>%
+  mutate(type = factor(type, levels = c("stable", "PEx"))) %>%
+  filter(Assay == "Calprotectin" | Assay == "SAA" | Assay == "CRP") %>%
+  mutate(value = value * 1e-06,
+         Assay = factor(Assay, levels = c("CRP", "SAA", "Calprotectin"))) %>%
+  ggplot(aes(x = type, y = value, fill = type)) +
+  geom_boxplot() +
+  geom_line(aes(group = subject), color = "dimgrey") +
+  geom_point() +
+  facet_wrap(~Assay, scales = "free_y") +
+  scale_fill_lancet() +
+  labs(x = "", y = "Concentration, mg/L", fill = "") +
+  theme_pubr()
+
+# PIGF
+p2 <- dataTab %>% 
+  inner_join(., clinical, by = "SampleID") %>%
+  mutate(type = factor(type, levels = c("stable", "PEx"))) %>%
+  filter(Assay == "PIGF") %>%
+  ggplot(aes(x = type, y = value, fill = type)) +
+  geom_boxplot() +
+  geom_line(aes(group = subject), color = "dimgrey") +
+  geom_point() +
+  facet_wrap(~Assay, scales = "free_y") +
+  scale_fill_lancet() +
+  labs(x = "", y = "Concentration, pg/mL", fill = "") +
+  theme_pubr() +
+  scale_y_continuous(trans = "log10")
+
+#ggsave(filename = paste(resultsPath, "DE Markers.IL17A IL-17C.png", sep = "/"), p5, dpi = 320, height = 3, width = 4)
+```
+
+# Use Calprotectin to predict imminent PEx
+```{r}
+clinical <- pDataImminent %>% dplyr::rename(SampleID = sampleID)
+
+data <- dataTab %>% 
+  left_join(clinical,. , by = "SampleID") %>%
+  mutate(Y = ifelse(type == "stable", "s", "p")) %>%
+  mutate(Y = factor(Y, levels = c("s", "p"))) %>%
+  filter(Assay == "Calprotectin") %>%
+  mutate(value.log2 = log2(value))
+```
+
+```{r}
+# Split training and testing data 75% vs. 25%
+set.seed(666)
+trainIndex <- createDataPartition(data$type, p = 0.75, list = FALSE, times = 5)
+trainIndex
+
+# Resample 4 were selected
+trainData <- data[trainIndex[,4],]
+testData <- data[-trainIndex[,4],]
+
+# Training Model
+## Features and Response Variables
+X <- trainData$value
+Y <- trainData$Y
+
+## Train Control
+folds <- groupKFold(trainData$subject, k = length(unique(trainData$subject)))
+
+trainctrl <- trainControl(index = folds, method = "cv", summaryFunction = twoClassSummary, classProbs = TRUE, verboseIter = FALSE, savePredictions = TRUE)
+
+## Fit Model
+set.seed(666)
+model.CALP  <- train(Y ~ value.log2, trainData, method = "glm", metric = "ROC", trControl = trainctrl, preProcess = c('center', 'scale'))
+
+getTrainPerf(model.CALP)
+
+# Testing Model
+pred <- predict(model.CALP, testData, type = "prob")
+roc.CALP <- roc(testData$Y, pred$p, uc = TRUE, plot = TRUE)
+auc(roc.CALP)
+```
+
+```{r}
+# auROC plot 
+p <- ggroc(list(`Calprotectin (AUC = 0.75)`= roc.CALP), legacy.axes = TRUE, alpha = 0.75, size = 1) +
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="grey", linetype="dashed") +
+  labs(color = "") +
+  theme_pubr(legend = "bottom") + 
+  scale_color_lancet()
+
+#ggsave(filename = paste(resultsPath, "AUC.CALP.png", sep = "/"), p, dpi = 320, height = 3, width = 4)
+#save(trainData, testData, model.CALP, file = paste(resultsPath, "Model.CALP.RData", sep = "/"))
+```
+
+
+# Use DE protein (p-value < 0.05) to predict imminent PEx
+
+```{r}
+sig.Protein <- filter(results.DE.MSD, P.Value < 0.05)
+
+clinical <- pDataImminent %>% dplyr::rename(SampleID = sampleID)
+
+data <- dataTab %>%
+  mutate(value = log2(value)) %>% # log2 transfer the value 
+  pivot_wider(names_from = Assay, values_from = value) %>%
+  dplyr::select(SampleID, sig.Protein$Assay) %>%
+  left_join(clinical,. , by = "SampleID") %>%
+  mutate(Y = ifelse(type == "stable", "s", "p")) %>%
+  mutate(Y = factor(Y, levels = c("s", "p")))
+```
+
+```{r}
+# Resample 4 were selected
+trainData.2 <- data[trainIndex[,4],]
+testData.2 <- data[-trainIndex[,4],]
+
+all(trainData.2$SampleID == trainData$SampleID)
+all(testData.2$SampleID == testData$SampleID)
+```
+
+```{r}
+## Features and Response Variables
+X <- trainData.2 %>% dplyr::select(sig.Protein$Assay)
+Y <- trainData.2$Y
+
+## Fit Model
+set.seed(666)
+model.MSD  <- train(X, Y, method = "rf", tuneLength = 1000, metric = "ROC", trControl = trainctrl, importance = TRUE, na.action = na.pass, preProcess = c('center', 'scale'))
+varImp(model.MSD)
+
+getTrainPerf(model.MSD)
+
+# Testing Model
+pred <- predict(model.MSD, testData.2, type = "prob")
+roc.MSD <- roc(testData.2$Y, pred$p, uc = TRUE, plot = TRUE)
+auc(roc.MSD)
+```
+
+```{r}
+# auROC plot 
+p <- ggroc(list(`Inflammatory markers (AUC = 0.63)`= roc.MSD), legacy.axes = TRUE, alpha = 0.75, size = 1) +
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color="grey", linetype="dashed") +
+  labs(color = "") +
+  theme_pubr(legend = "bottom") + 
+  scale_color_lancet()
+
+ggsave(filename = paste(resultsPath, "AUC.MSD.png", sep = "/"), p, dpi = 320, height = 3, width = 4)
+#save(trainData, testData, model.CALP, file = paste(resultsPath, "Model.CALP.RData", sep = "/"))
+```
