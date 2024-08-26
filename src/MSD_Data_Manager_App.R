@@ -2,6 +2,8 @@
 library(shiny)
 library(bslib)
 library(plotly)
+library(readxl)
+library(janitor)
 
 
 
@@ -62,8 +64,14 @@ ui <- page_navbar(
 # Define Server
 server <- function(input, output, session) {
 
+  # --- Result Overview Page ---
+  observe({
+    req(input$result, input$standard)
+    
+    
+  })
   
-  # # --- QC Page ---
+  
   # # Reactive to handle standard file uploads and generate plots
   # observe({
   #   req(input$standard)
