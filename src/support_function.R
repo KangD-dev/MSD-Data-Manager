@@ -54,6 +54,9 @@ read_csv_with_keyword <- function(file_path, keyword, search_limit = 10) {
     # Assign the correct column names
     colnames(data) <- header
     
+    # Fix column names
+    data <- clean_names(data)
+    
     # Return the cleaned data as a data frame
     return(data)
   } else {
@@ -62,8 +65,118 @@ read_csv_with_keyword <- function(file_path, keyword, search_limit = 10) {
 }
 
 
+#' @title Format MSD EDR Data with QC
+#'
+#' @description
+#' The `format_msd_raw_data` function processes raw MSD (Meso Scale Discovery) EDR data.
+#' It includes QC steps to check for missing values, required columns, and duplicates before
+#' formatting the data by extracting mean and unique results and combining them into a single data frame.
+#'
+#' @param raw_data A data frame containing the raw MSD EDR data.
+#'
+#' @return A data frame with formatted MSD EDR data, combining mean and unique results.
+#' 
+#' @examples
+#' # Assuming `raw_data` is your input data frame containing MSD EDR data:
+#' formatted_data <- format_msd_raw_data(raw_data)
+#'
+format_msd_raw_data <- function(raw_data) {
+  
+  # Define the fields required for the mean result report
+  report_mean_fields <- c("sample", "assay", "spot", "dilution", "calc_conc_mean", "calc_conc_cv")
+  
+  # Define the fields required for the unique result report
+  report_unique_fields <- c("sample", "assay", "well", "calc_concentration")
+  
+  # QC Step 1: Check for required columns
+  required_columns <- c(report_mean_fields, report_unique_fields)
+  missing_columns <- setdiff(required_columns, colnames(raw_data))
+  
+  if (length(missing_columns) > 0) {
+    stop(paste("The following required columns are missing from the input data:", paste(missing_columns, collapse = ", ")))
+  }
+  
+  # QC Step 2: Check for missing values in critical columns
+  critical_columns <- c("sample", "assay", "calc_conc_mean", "calc_concentration")
+  missing_values <- sapply(raw_data[critical_columns], function(col) sum(is.na(col)))
+  
+  if (any(missing_values > 0)) {
+    warning("There are missing values in the following columns:")
+    print(missing_values[missing_values > 0])
+  }
+  
+  # QC Step 3: Check for duplicates in critical columns
+  duplicate_rows <- raw_data %>% 
+    select(sample, assay, well) %>% 
+    duplicated()
+  
+  if (any(duplicate_rows)) {
+    warning("There are duplicate rows in the input data based on sample, assay, and well columns.")
+  }
+  
+  # Extract mean result data by selecting the relevant fields and removing duplicates
+  mean_data <- raw_data %>%
+    select(all_of(report_mean_fields)) %>%
+    distinct()
+  
+  # Extract unique result data
+  unique_data <- raw_data %>%
+    select(all_of(report_unique_fields)) %>%
+    group_by(sample, assay) %>%
+    
+    # Combine values in the 'well' and 'calc_concentration' columns for each group
+    mutate(well = paste(well, collapse = "; "),
+           calc_concentration = paste(calc_concentration, collapse = "; ")) %>%
+    
+    # Remove duplicates to ensure each (sample, assay) pair is unique
+    distinct()
+  
+  # Combine mean and unique results into a single data frame
+  format_raw_data <- left_join(unique_data, mean_data, by = c("sample", "assay"))
+  
+  # Return the formatted data
+  return(format_raw_data)
+}
 
 
+#' @title Preprocess MSD Data
+#'
+#' @description
+#' The `preprocessMSD` function preprocesses MSD (Meso Scale Discovery) data by loading the raw data and standard files,
+#' formatting the raw data, extracting relevant standard data, and merging them into a single metadata data frame.
+#'
+#' @param dataFile A file path to the raw MSD data file (CSV).
+#' @param standardFile A file path to the standard curve data file (CSV).
+#'
+#' @return A data frame containing the merged metadata with formatted raw data and standard information.
+#'
+#' @examples
+#' # Example usage:
+#' metadata <- preprocessMSD("path/to/raw_data.csv", "path/to/standard_data.csv")
+#'
+preprocessMSD <- function(dataFile, standardFile) {
+  
+  # Load the raw data file, identifying the first row with the keyword "sample"
+  raw_data <- read_csv_with_keyword(dataFile, keyword = "sample") 
+  
+  # Load the standard data file, identifying the first row with the keyword "assay"
+  std_data <- read_csv_with_keyword(standardFile, keyword = "assay") 
+  
+  # Format the raw data using the format_msd_raw_data function
+  format_raw_data <- format_msd_raw_data(raw_data)
+  
+  # Extract relevant variables from the standard data
+  format_std_data <- std_data %>%
+    select(all_of(c("assay", "spot", "fit_statistic_r_squared", 
+                    "detection_limits_calc_low", "detection_limits_calc_high")))
+  
+  # Merge the formatted raw data with the formatted standard data based on assay and spot
+  metadata <- left_join(format_raw_data, format_std_data, by = c("assay", "spot")) %>%
+    arrange(sample)  # Arrange the metadata by sample for easier analysis
+  
+  # Return the final merged metadata
+  return(metadata)
+}
 
 
 
@@ -81,16 +194,27 @@ dataFile <- file.path("/Users/KangDong/Desktop/Lab_app/data/Angiogenesis Panel 1
 
 preprocessMSD <- function(dataFile, standardFile) {
   # Load Data File and Standard File
-  raw_data <- read_csv_with_keyword(dataFile, keyword = "sample") %>% clean_names()
-  std_data <- read_csv_with_keyword(standardFile, keyword = "assay") %>% clean_names()
+  raw_data <- read_csv_with_keyword(dataFile, keyword = "sample") 
+  std_data <- read_csv_with_keyword(standardFile, keyword = "assay") 
 
+  # Format raw data
+  format_raw_data <- format_msd_raw_data(raw_data)
   
-  # Select columns
-  data <- data %>% dplyr::select(SampleID, SubjectID, Plate, Sample, UniqueID, Assay, `Calc. Concentration`, `Calc. Conc. Mean`, `Calc. Conc. CV`, `Detection Limits: Calc. Low`, `Detection Limits: Calc. High` )
+  # Report vars for standard 
+  format_std_data <- std_data %>% select(all_of(c("assay", "spot", "fit_statistic_r_squared", "detection_limits_calc_low", "detection_limits_calc_high")))
   
+  # Join raw and standard
+  metadata <- left_join(format_raw_data, format_std_data, by = c("assay", "spot")) %>%
+    arrange(sample)
   
-  
+  # Return metadata
+  return(metadata)
 
-  
-  
 }
+
+test <- preprocessMSD(dataFile, standardFile)
+
+
+
+
+
