@@ -117,14 +117,15 @@ format_msd_raw_data <- function(raw_data) {
   # Extract mean result data by selecting the relevant fields and removing duplicates
   mean_data <- raw_data %>%
     select(all_of(report_mean_fields)) %>%
-    distinct()
+    distinct() %>%
+    mutate(calc_conc_mean = round(as.numeric(calc_conc_mean), 3),
+           calc_conc_cv = round(as.numeric(calc_conc_cv), 3))
   
   # Extract unique result data
   unique_data <- raw_data %>%
     select(all_of(report_unique_fields)) %>%
+    mutate(calc_concentration = round(as.numeric(calc_concentration), 3)) %>%
     group_by(sample, assay) %>%
-    
-    # Combine values in the 'well' and 'calc_concentration' columns for each group
     mutate(well = paste(well, collapse = "; "),
            calc_concentration = paste(calc_concentration, collapse = "; ")) %>%
     
@@ -167,6 +168,9 @@ preprocessMSD <- function(dataFile, standardFile) {
   
   # Extract relevant variables from the standard data
   format_std_data <- std_data %>%
+    mutate(fit_statistic_r_squared = round(as.numeric(fit_statistic_r_squared), 3),
+           detection_limits_calc_low = round(as.numeric(detection_limits_calc_low), 3),
+           detection_limits_calc_high = round(as.numeric(detection_limits_calc_high), 3)) %>%
     select(all_of(c("assay", "spot", "fit_statistic_r_squared", 
                     "detection_limits_calc_low", "detection_limits_calc_high")))
   
@@ -183,38 +187,38 @@ preprocessMSD <- function(dataFile, standardFile) {
 
 
 
-# -------------------------------------------------------------------------
-
-
-
-standardFile <- file.path("/Users/KangDong/Desktop/Lab_app/data/Angiogenesis Panel 1-Plate 1-Standard.csv")
-dataFile <- file.path("/Users/KangDong/Desktop/Lab_app/data/Angiogenesis Panel 1-Plate 1.csv")
-
-
-
-preprocessMSD <- function(dataFile, standardFile) {
-  # Load Data File and Standard File
-  raw_data <- read_csv_with_keyword(dataFile, keyword = "sample") 
-  std_data <- read_csv_with_keyword(standardFile, keyword = "assay") 
-
-  # Format raw data
-  format_raw_data <- format_msd_raw_data(raw_data)
-  
-  # Report vars for standard 
-  format_std_data <- std_data %>% select(all_of(c("assay", "spot", "fit_statistic_r_squared", "detection_limits_calc_low", "detection_limits_calc_high")))
-  
-  # Join raw and standard
-  metadata <- left_join(format_raw_data, format_std_data, by = c("assay", "spot")) %>%
-    arrange(sample)
-  
-  # Return metadata
-  return(metadata)
-
-}
-
-test <- preprocessMSD(dataFile, standardFile)
-
-
-
-
-
+# # -------------------------------------------------------------------------
+# 
+# 
+# 
+# standardFile <- file.path("/Users/KangDong/Desktop/Lab_app/data/Angiogenesis Panel 1-Plate 1-Standard.csv")
+# dataFile <- file.path("/Users/KangDong/Desktop/Lab_app/data/Angiogenesis Panel 1-Plate 1.csv")
+# 
+# 
+# 
+# preprocessMSD <- function(dataFile, standardFile) {
+#   # Load Data File and Standard File
+#   raw_data <- read_csv_with_keyword(dataFile, keyword = "sample") 
+#   std_data <- read_csv_with_keyword(standardFile, keyword = "assay") 
+# 
+#   # Format raw data
+#   format_raw_data <- format_msd_raw_data(raw_data)
+#   
+#   # Report vars for standard 
+#   format_std_data <- std_data %>% select(all_of(c("assay", "spot", "fit_statistic_r_squared", "detection_limits_calc_low", "detection_limits_calc_high")))
+#   
+#   # Join raw and standard
+#   metadata <- left_join(format_raw_data, format_std_data, by = c("assay", "spot")) %>%
+#     arrange(sample)
+#   
+#   # Return metadata
+#   return(metadata)
+# 
+# }
+# 
+# test <- preprocessMSD(dataFile, standardFile)
+# 
+# 
+# 
+# 
+# 
