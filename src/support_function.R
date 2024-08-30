@@ -168,11 +168,9 @@ preprocessMSD <- function(dataFile, standardFile) {
   
   # Extract relevant variables from the standard data
   format_std_data <- std_data %>%
-    mutate(fit_statistic_r_squared = round(as.numeric(fit_statistic_r_squared), 3),
-           detection_limits_calc_low = round(as.numeric(detection_limits_calc_low), 3),
+    mutate(detection_limits_calc_low = round(as.numeric(detection_limits_calc_low), 3),
            detection_limits_calc_high = round(as.numeric(detection_limits_calc_high), 3)) %>%
-    select(all_of(c("assay", "spot", "fit_statistic_r_squared", 
-                    "detection_limits_calc_low", "detection_limits_calc_high")))
+    select(all_of(c("assay", "spot", "detection_limits_calc_low", "detection_limits_calc_high")))
   
   # Merge the formatted raw data with the formatted standard data based on assay and spot
   metadata <- left_join(format_raw_data, format_std_data, by = c("assay", "spot")) %>%
