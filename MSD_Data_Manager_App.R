@@ -63,7 +63,7 @@ ui <- page_navbar(
 # Define Server
 server <- function(input, output, session) {
   
-  # --- Result Overview Page ---
+  
   observe({
     req(input$result, input$standard, input$spl_man)
     
@@ -71,18 +71,27 @@ server <- function(input, output, session) {
     msd <- preprocessMSD(dataFile = input$result$datapath, standardFile = input$standard$datapath)
     
     # add sample manifest
-    spl_man <- read_excel(input$spl_man$datapath)
-    metadata <- spl_man %>% left_join(msd, by = c("SAMPLE" = "sample"))
+    spl <- read_excel(input$spl_man$datapath, sheet = "Sample Manifest")
+    metadata <- spl %>% left_join(msd, by = c("SAMPLE" = "sample"))
     
+    # --- Result UI ---
     # Create dynamic result UI
     output$result_ui <- renderUI({
       DT::DTOutput("result_tbl")
     })
-    
+
     output$result_tbl <- renderDT({
       metadata
     })
     
+    # --- QC UI ---
+    output$qc_ui <- renderUI({
+      plotlyOutput("plot_cv")
+    })
+    
+    output$plot_cv <- renderPlotly({
+      plotCV(metadata)
+    })
   })
   
 }

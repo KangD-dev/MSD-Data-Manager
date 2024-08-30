@@ -1,3 +1,5 @@
+# read_csv_with_keyword ---------------------------------------------------
+
 #' @title Read CSV with Keyword as Header
 #' 
 #' @description
@@ -64,6 +66,8 @@ read_csv_with_keyword <- function(file_path, keyword, search_limit = 10) {
   }
 }
 
+
+# format_msd_raw_data() ---------------------------------------------------
 
 #' @title Format MSD EDR Data with QC
 #'
@@ -140,6 +144,8 @@ format_msd_raw_data <- function(raw_data) {
 }
 
 
+# preprocessMSD -----------------------------------------------------------
+
 #' @title Preprocess MSD Data
 #'
 #' @description
@@ -181,42 +187,29 @@ preprocessMSD <- function(dataFile, standardFile) {
 }
 
 
+# plotCV ------------------------------------------------------------------
+#' 
+#' @description Function to create a plot comparing the coefficient of variation (CV) against calculated concentration
+#' @param data  A data frame containing the data to be plotted
+#' @param x     Calculated mean concentration
+#' @param y     Coefficient of Variation
+plotCV <- function(data, x = calc_conc_cv, y = calc_conc_mean, sample_id = SUBJID, plot_width = 600, plot_height = 600) {
+  
+  # Create the ggplot object
+  p <- ggplot(data, aes(x = {{x}}, y = {{y}}, text = paste("Sample ID:", {{sample_id}}))) +
+    geom_point(alpha = 0.7, size = 2) +
+    facet_wrap( ~ assay, ncol = 3, scales = "free") +
+    geom_hline(aes(yintercept = detection_limits_calc_low), color = "dodgerblue3", linetype = "dashed", linewidth = 0.75) +
+    geom_vline(xintercept = c(10, 15, 20, 25), color = "firebrick1", linetype = "dashed", linewidth = 0.75) +
+    scale_y_log10() +
+    labs(title = "CV vs. Calculated Concentration",
+         x = "Coefficient of Variation (CV) [%]",
+         y = "Calculated Concentration [pg/mL]") +
+    theme_bw(base_size = 14)
+  
+  return(ggplotly(p, width = plot_width, height = plot_height)) 
+}
 
 
 
-
-# # -------------------------------------------------------------------------
-# 
-# 
-# 
-# standardFile <- file.path("/Users/KangDong/Desktop/Lab_app/data/Angiogenesis Panel 1-Plate 1-Standard.csv")
-# dataFile <- file.path("/Users/KangDong/Desktop/Lab_app/data/Angiogenesis Panel 1-Plate 1.csv")
-# 
-# 
-# 
-# preprocessMSD <- function(dataFile, standardFile) {
-#   # Load Data File and Standard File
-#   raw_data <- read_csv_with_keyword(dataFile, keyword = "sample") 
-#   std_data <- read_csv_with_keyword(standardFile, keyword = "assay") 
-# 
-#   # Format raw data
-#   format_raw_data <- format_msd_raw_data(raw_data)
-#   
-#   # Report vars for standard 
-#   format_std_data <- std_data %>% select(all_of(c("assay", "spot", "fit_statistic_r_squared", "detection_limits_calc_low", "detection_limits_calc_high")))
-#   
-#   # Join raw and standard
-#   metadata <- left_join(format_raw_data, format_std_data, by = c("assay", "spot")) %>%
-#     arrange(sample)
-#   
-#   # Return metadata
-#   return(metadata)
-# 
-# }
-# 
-# test <- preprocessMSD(dataFile, standardFile)
-# 
-# 
-# 
-# 
-# 
+plotCV(metadata)
