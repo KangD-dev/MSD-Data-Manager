@@ -17,7 +17,12 @@ source("src/support_function.R")
 
 # Define UI
 ui <- page_navbar(
-  title = h1("MSD Data Manager"),
+  
+  title = div(
+    h1("MSD Data Manager"),
+    h6("Quon Lab, Centre for Heart Lung Innovation"),
+    style = "text-align: left;"
+  ),
   
   # Sidebar configuration
   nav_panel("Upload Files",
@@ -67,7 +72,6 @@ ui <- page_navbar(
   
   theme = bs_theme(preset = "materia")
 )
-
 
 
 # Define Server
