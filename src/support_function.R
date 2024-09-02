@@ -1,3 +1,12 @@
+# Set environment
+library(readxl)
+library(janitor)
+library(tidyverse)
+library(plotly)
+library(rlang)
+library(ggplot2)
+
+
 # read_csv_with_keyword ---------------------------------------------------
 
 #' @title Read CSV with Keyword as Header
@@ -64,6 +73,44 @@ read_csv_with_keyword <- function(file_path, keyword, search_limit = 10) {
   } else {
     stop(paste("Keyword not found in the first", search_limit, "rows of the file."))
   }
+}
+
+
+
+# convert_greek_to_ascii --------------------------------------------------
+
+#' Convert Greek Characters to ASCII
+#'
+#' This function converts Greek characters in a text string to their corresponding
+#' ASCII representations. Greek letters are mapped to simplified Latin letters or
+#' common transliterations.
+#'
+#' @param text A character string containing Greek characters that need to be converted.
+#'
+#' @return A character string with Greek characters replaced by their ASCII equivalents.
+convert_greek_to_ascii <- function(text) {
+  # Define a named vector mapping Greek characters to ASCII equivalents
+  greek_to_ascii <- c(
+    "α" = "alpha",  "β" = "beta",  "γ" = "gamma",  "δ" = "delta",  "ε" = "epsilon",
+    "ζ" = "zeta",   "η" = "eta",   "θ" = "theta",  "ι" = "iota",   "κ" = "kappa",
+    "λ" = "lambda", "μ" = "mu",    "ν" = "nu",    "ξ" = "xi",     "ο" = "omicron",
+    "π" = "pi",     "ρ" = "rho",   "σ" = "sigma",  "τ" = "tau",    "υ" = "upsilon",
+    "φ" = "phi",    "χ" = "chi",   "ψ" = "psi",    "ω" = "omega",
+    "Α" = "Alpha",  "Β" = "Beta",  "Γ" = "Gamma",  "Δ" = "Delta",  "Ε" = "Epsilon",
+    "Ζ" = "Zeta",   "Η" = "Eta",   "Θ" = "Theta",  "Ι" = "Iota",   "Κ" = "Kappa",
+    "Λ" = "Lambda", "Μ" = "Mu",    "Ν" = "Nu",    "Ξ" = "Xi",     "Ο" = "Omicron",
+    "Π" = "Pi",     "Ρ" = "Rho",   "Σ" = "Sigma",  "Τ" = "Tau",    "Υ" = "Upsilon",
+    "Φ" = "Phi",    "Χ" = "Chi",   "Ψ" = "Psi",    "Ω" = "Omega"
+  )
+  
+  # Use gsub to replace Greek characters with ASCII equivalents
+  result <- text
+  for (greek_char in names(greek_to_ascii)) {
+    ascii_char <- greek_to_ascii[greek_char]
+    result <- gsub(greek_char, ascii_char, result, fixed = TRUE)
+  }
+  
+  return(result)
 }
 
 
@@ -137,7 +184,10 @@ format_msd_raw_data <- function(raw_data) {
     distinct()
   
   # Combine mean and unique results into a single data frame
-  format_raw_data <- left_join(unique_data, mean_data, by = c("sample", "assay"))
+  format_raw_data <- left_join(unique_data, 
+                               mean_data, 
+                               by = c("sample", "assay")) %>%
+    mutate(assay = convert_greek_to_ascii(assay))
   
   # Return the formatted data
   return(format_raw_data)
@@ -193,23 +243,93 @@ preprocessMSD <- function(dataFile, standardFile) {
 #' @param data  A data frame containing the data to be plotted
 #' @param x     Calculated mean concentration
 #' @param y     Coefficient of Variation
-plotCV <- function(data, x = calc_conc_cv, y = calc_conc_mean, sample_id = SUBJID, plot_width = 600, plot_height = 600) {
+plotCV <- function(data, var1 = calc_conc_cv, var2 = calc_conc_mean, sample_id = SUBJID, plot_width = 300, plot_height = 300) {
   
   # Create the ggplot object
-  p <- ggplot(data, aes(x = {{x}}, y = {{y}}, text = paste("Sample ID:", {{sample_id}}))) +
+  p <- ggplot(data, aes(x = {{var1}}, y = {{var2}}, text = paste("Sample ID:", {{sample_id}}))) +
     geom_point(alpha = 0.7, size = 2) +
-    facet_wrap( ~ assay, ncol = 3, scales = "free") +
     geom_hline(aes(yintercept = detection_limits_calc_low), color = "dodgerblue3", linetype = "dashed", linewidth = 0.75) +
     geom_vline(xintercept = c(10, 15, 20, 25), color = "firebrick1", linetype = "dashed", linewidth = 0.75) +
     scale_y_log10() +
+    facet_wrap(~ assay) +
     labs(title = "CV vs. Calculated Concentration",
          x = "Coefficient of Variation (CV) [%]",
          y = "Calculated Concentration [pg/mL]") +
-    theme_bw(base_size = 14)
+    theme_bw(base_size = 7)
   
   return(ggplotly(p, width = plot_width, height = plot_height)) 
 }
 
 
 
-plotCV(metadata)
+
+
+# plotQC ------------------------------------------------------------------
+#' Generate Quality Control Plots
+#'
+#' This function creates a set of quality control plots to visualize the relationship between calculated concentration and coefficient of variation (CV), as well as the distribution of raw and log-transformed data. The plots are created using `ggplot2` and converted to interactive `plotly` plots for enhanced interactivity.
+#'
+#' @param data A data frame containing the data to be plotted. It should include columns for the variables specified in `var1`, `var2`, and `sample_id`.
+#' @param var1 The variable representing the coefficient of variation (CV) to be plotted on the x-axis in the first QC plot. Defaults to `calc_conc_cv`.
+#' @param var2 The variable representing the calculated concentration to be plotted on the y-axis in the first QC plot and the x-axis in the other plots. Defaults to `calc_conc_mean`.
+#' @param sample_id The variable representing the sample ID, used for labeling points in the first QC plot. Defaults to `SUBJID`.
+#'
+#' @return A `plotly` object containing the interactive QC plots arranged in a row. The first plot shows CV vs. calculated concentration, the second shows the distribution of raw data, and the third shows the distribution of log-transformed data.
+plotQC <- function(data, var1 = calc_conc_cv, var2 = calc_conc_mean, sample_id = SUBJID, plot_width = 300, plot_height = 300) {
+  
+  # Convert variables to symbols for tidy evaluation
+  var1 <- enquo(var1)
+  var2 <- enquo(var2)
+  sample_id <- enquo(sample_id)
+  
+  # QC #1: CV vs. Calculated Concentration
+  p_cv <- ggplot(data, aes(x = !!var1, y = !!var2, text = paste("Sample ID:", !!sample_id))) +
+    geom_point(alpha = 0.7, size = 2) +
+    geom_hline(aes(yintercept = detection_limits_calc_low), color = "dodgerblue3", linetype = "dashed", linewidth = 0.75) +
+    geom_vline(xintercept = c(10, 15, 20, 25), color = "firebrick1", linetype = "dashed", linewidth = 0.75) +
+    scale_y_log10() +
+    facet_wrap(~ assay, scales = "free") +
+    theme_bw(base_size = 10)
+  
+  # QC #2: Raw Data Distribution
+  p_dis_raw <- ggplot(data, aes(x = !!var2)) +
+    geom_histogram(fill = "skyblue", color = "black", bins = 30, alpha = 0.7) +
+    facet_wrap(~ assay, scales = "free") +
+    theme_bw(base_size = 10)
+  
+  # QC #3: log10 Transformed Data Distribution
+  p_dis_log <- ggplot(data, aes(x = log10(!!var2))) +
+    geom_histogram(fill = "lightgreen", color = "black", bins = 30, alpha = 0.7) +
+    facet_wrap(~ assay, scales = "free") +
+    theme_bw(base_size = 10)
+  
+  # Convert to plotly
+  p_cv <- ggplotly(p_cv, height = plot_height) %>% layout(
+    xaxis = list(title = "Coefficient of Variation (CV) [%]"),
+    yaxis = list(title = "Calculated Concentration [pg/mL]")
+  )
+  
+  p_dis_raw <- ggplotly(p_dis_raw, height = plot_height) %>% layout(
+    xaxis = list(title = "Calculated Concentration"),
+    yaxis = list(title = "Count")
+  )
+  
+  p_dis_log <- ggplotly(p_dis_log, height = plot_height) %>% layout(
+    xaxis = list(title = "log10(Calculated Concentration)"),
+    yaxis = list(title = "Count")
+  )
+  
+  p <- subplot(
+    p_cv,
+    p_dis_raw,
+    p_dis_log,
+    nrows = 1,
+    shareX = FALSE,
+    shareY = FALSE,
+    titleX = TRUE,
+    titleY = TRUE,
+    margin = 0.05
+  )
+  
+  return(p)
+}
