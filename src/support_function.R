@@ -333,3 +333,30 @@ plotQC <- function(data, var1 = calc_conc_cv, var2 = calc_conc_mean, sample_id =
   
   return(p)
 }
+
+
+
+# plotBOX -----------------------------------------------------------------
+plotBOX <- function(data, var1 = GROUP, var2 = calc_conc_mean, sample_id = SUBJID, plot_width = 300, plot_height = 300) {
+  
+  # Convert variables to symbols for tidy evaluation
+  var1 <- enquo(var1)
+  var2 <- enquo(var2)
+  sample_id <- enquo(sample_id)
+  
+  # Box plot
+  p <- ggplot(data, aes(x = !!var1, y = !!var2, fill = !!var1)) +
+    geom_boxplot(alpha = 0.7) +
+    geom_jitter(size = 2) +
+    scale_y_log10() +
+    facet_wrap(~ assay, scales = "free") +
+    theme_bw(base_size = 10) +
+    labs(x = "Group",
+         y = "Calculated Concentration [pg/mL]")
+  
+  # Convert to plotly
+  p <- ggplotly(p, height = plot_height, width = plot_width) 
+  
+  return(p)
+}
+

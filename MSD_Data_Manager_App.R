@@ -74,6 +74,7 @@ ui <- page_navbar(
 )
 
 
+
 # Define Server
 server <- function(input, output, session) {
   
@@ -107,7 +108,7 @@ server <- function(input, output, session) {
     output$qc_ui <- renderUI({
       # Dynamically create plotlyOutput elements for each plot
       plot_output_list <- lapply(1:length(unique(metadata$assay)), function(i) {
-        plotlyOutput(paste0("plot_cv_", i))
+        plotlyOutput(paste0("plot_qc_", i))
       })
       # Combine the list into a tagList for sequential display
       do.call(tagList, plot_output_list)
@@ -115,13 +116,30 @@ server <- function(input, output, session) {
     
     # Render each plot
     lapply(1:length(unique(metadata$assay)), function(i) {
-      output[[paste0("plot_cv_", i)]] <- renderPlotly({
+      output[[paste0("plot_qc_", i)]] <- renderPlotly({
         assay_data <- metadata %>% filter(assay == unique(metadata$assay)[i])
         plotQC(assay_data)
       })
     })
+    
+    # --- Analysis UI ---
+    output$analysis_ui <- renderUI({
+      # Dynamically create plotlyOutput elements for each plot
+      plot_output_list <- lapply(1:length(unique(metadata$assay)), function(i) {
+        plotlyOutput(paste0("plot_analysis_", i))
+      })
+      # Combine the list into a tagList for sequential display
+      do.call(tagList, plot_output_list)
+    })
+    
+    # Render each plot
+    lapply(1:length(unique(metadata$assay)), function(i) {
+      output[[paste0("plot_analysis_", i)]] <- renderPlotly({
+        assay_data <- metadata %>% filter(assay == unique(metadata$assay)[i])
+        plotBOX(assay_data)
+      })
+    })
   })
-  
   
   # --- Download Handler ---
   output$download_metadata <- downloadHandler(
