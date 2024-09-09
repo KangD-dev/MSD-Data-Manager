@@ -2,6 +2,7 @@
 library(readxl)
 library(janitor)
 library(tidyverse)
+library(stringr)
 library(plotly)
 library(rlang)
 library(ggplot2)

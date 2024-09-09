@@ -3,10 +3,6 @@ library(shiny)
 library(bslib)
 library(DT)
 library(plotly)
-library(readxl)
-library(janitor)
-library(tidyverse)
-library(stringr)
 
 
 
