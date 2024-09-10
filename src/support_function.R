@@ -346,7 +346,7 @@ plotBOX <- function(data, var1 = GROUP, var2 = calc_conc_mean, sample_id = SUBJI
   sample_id <- enquo(sample_id)
   
   # Box plot
-  p <- ggplot(data, aes(x = !!var1, y = !!var2, fill = !!var1)) +
+  p <- ggplot(data, aes(x = !!var1, y = !!var2, fill = !!var1, text = paste("Sample ID:", !!sample_id))) +
     geom_boxplot(alpha = 0.7) +
     geom_jitter(size = 2) +
     scale_y_log10() +
