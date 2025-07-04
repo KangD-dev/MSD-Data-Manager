@@ -227,7 +227,8 @@ preprocessMSD <- function(dataFile, standardFile) {
   format_std_data <- std_data %>%
     mutate(detection_limits_calc_low = round(as.numeric(detection_limits_calc_low), 3),
            detection_limits_calc_high = round(as.numeric(detection_limits_calc_high), 3)) %>%
-    select(all_of(c("assay", "spot", "detection_limits_calc_low", "detection_limits_calc_high")))
+    select(all_of(c("assay", "spot", "detection_limits_calc_low", "detection_limits_calc_high"))) %>%
+    mutate(assay = convert_greek_to_ascii(assay))
   
   # Merge the formatted raw data with the formatted standard data based on assay and spot
   metadata <- left_join(format_raw_data, format_std_data, by = c("assay", "spot")) %>%
